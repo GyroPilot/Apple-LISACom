@@ -1,0 +1,26 @@
+LISACom public 1.1 -- Lisa Pascal sources (as released)
+
+LMX-MAIN.TEXT      the program (terminal, dial, XMODEM/YMODEM engines)
+LMX-GLOBALS.TEXT   unit LmxGlobals: menu constants, text pane, Filer
+                   handshake.  lmxVersion (the About box string) lives
+                   here.
+LMX-ALERTS.TEXT    alerts + menus (Alert tool input; menus match the
+                   mi* constants in GLOBALS BY POSITION)
+fmt_text.py        REQUIRED for building: converts each source to the
+                   Workshop paged .TEXT format (1024-byte header page,
+                   no line straddling a 1024 boundary, bare CR line
+                   endings).  Raw text files will not compile.
+
+Build: format all three on a modern machine, move them to the Lisa's
+LMX/ slots (LISACom itself is the natural carrier: Receive via
+YMODEM), then from the Workshop: R <LMX/MAKE.  MAIN, GLOBALS and
+ALERTS change in lockstep whenever menus change.
+
+Hard-won notes living in the comments: the serial typeahead buffer is
+pinned at 1024 -- larger kills receive on a Lisa 2/10; the terminal
+is model-first (drain the port, paint once) so BBS menu bursts cannot
+outrun a 5 MHz machine; Lisa Pascal cannot index a string constant
+(see cpMap -> cpTab); and '-' is not legal in a catalog name.
+
+README.md is the full manual.  The .dc42 is the released distribution
+floppy, shared with the AtkinsonPoint repo (both tools, one disk).

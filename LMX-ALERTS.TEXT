@@ -1,0 +1,101 @@
+; ==========================================================================
+;  LMX-ALERTS.TEXT -- LISACom (was LISA XModem Util)  ***  1.0  ***
+;  Beta 8 menu: XModem gains 'Dial .../D' between Terminal and Hang Up.
+;  Menu items are matched by POSITION, so this file must be in step with
+;  the mi* constants in LMX-GLOBALS.TEXT.
+;  Compiled by the Workshop 'Alert' tool into T202PHRASE (see LMX-MAKE).
+;  Format rules: comments on their OWN lines; blank lines are STRUCTURAL;
+;  alert numbers strictly ascending, 1 and 2 REQUIRED; each section ends
+;  with a lone 0.  Numbers here stay in lockstep with LMX-GLOBALS.TEXT.
+; ==========================================================================
+;
+; ---- FILE HEADER ---------------------------------------------------------
+; Version stamp: compared against alertVerNum (= 1) in LmxGlobals.
+1
+; cacheSize (slots) and cacheBytes: replace with the Alert tool's suggested
+; values after the first build if it prints different ones.
+4
+2000
+; The five icon strings, in exactly this order: ask, wait, stop, note,
+; caution.
+?
+Wait
+Stop
+Note
+Caution
+; Button captions: index 0 MUST be Cancel, index 1 MUST be OK.
+Cancel
+OK
+
+; ==== ALERTS ==============================================================
+;
+; -- number 1 REQUIRED: shown when code asks for an unknown alert number.
+1 note alert
+LISACom could not find the message that should appear here.
+If you are unable to proceed, mention the number ^N.
+
+; -- number 2 REQUIRED: the Swan Song, locked in cache slot 0 for use when
+;    disk or memory has failed.
+2 stop alert
+LISACom is having technical difficulties accessing the disk
+that contains the tool.^L^L
+Put away your documents one at a time, or push the on-off button to
+save them all.
+
+; -- the stage-1 stub notice for the XModem menu commands.
+10 note alert
+This command is not wired up yet.  The transfer engine arrives in the
+next stage of the port.
+
+0
+
+; ==== MENUS ===============================================================
+; Each block: menuId, title, one item per line ('/X' = Apple-key
+; equivalent, lone '-' = disabled separator that still counts as an item),
+; ended by a blank line.  Ids match mFile / mXfer in LMX-GLOBALS.TEXT.
+1
+File/Print
+Set Aside Everything
+Set Aside "LISACom"
+-
+Save & Put Away
+
+2
+XModem
+Receive a File .../R
+Receive via YMODEM .../Y
+Send a File .../S
+Send via YMODEM ...
+-
+List Files/L
+-
+Terminal .../T
+Dial .../D
+Hang Up
+-
+Delete a File ...
+Clear Screen/K
+
+3
+Baud
+1200
+2400
+4800
+9600
+19200
+28800
+38400
+
+4
+Version
+About LISACom
+Font Survey
+
+5
+Bookmarks
+Add ...
+Remove ...
+-
+Show List
+
+0

@@ -1,0 +1,414 @@
+unit LmxGlobals;
+
+{ LMX-GLOBALS.TEXT -- LISACom (was LISA XModem Util)  ***  1.1  ***      }
+{ lmxVersion below is the one true version string; the About box shows   }
+{ it.  This banner exists so the PC-side file is identifiable at a       }
+{ glance.  Shared state, the Filer handshake, and the text pane.         }
+
+INTERFACE
+
+uses (*$U UnitStd.obj *)   UnitStd,
+     (*$U UnitHz.obj *)    UnitHz,
+     (*$U Storage.obj *)   Storage,
+     (*$U QuickDraw.obj *) QuickDraw,
+     (*$U Fontmgr.obj *)   FontMgr,
+     (*$U SysCall.obj *)   SysCall,
+     (*$U wm.events.obj *) Events,
+     (*$U wm.folders.obj *) Folders,
+     (*$U wm.menus.obj *)  Menus,
+     (*$U AlertMgr.obj *)  AlertMgr,
+     (*$U WMLstd.obj *)    WMLstd,
+     (*$U WMlCrs.obj *)    WMLCrs,
+     (*$U FilerComm.obj *) FilerComm;
+
+const
+   { Menus.  Ids match the menu blocks in LMX-ALERTS.TEXT; a '-'         }
+   { separator COUNTS as an item position.                               }
+   mFile = 1;
+      miAsideAll = 1;
+      miAside    = 2;
+      { item 3 is a '-' separator }
+      miPutAway  = 4;
+
+   mXfer = 2;
+      miReceive = 1;          {   Receive a File ... (XMODEM) }
+      miRecvY   = 2;          {   Receive via YMODEM ... }
+      miSend    = 3;
+      miSendY   = 4;          {   Send via YMODEM ... (1.0) }
+      { item 5 is a '-' separator }
+      miList    = 6;
+      { item 7 is a '-' separator }
+      miTermnl  = 8;          {   Terminal ... }
+      miDial    = 9;          {   Dial ... (bookmarks) }
+      miHangUp  = 10;         {   Hang Up (close the line) }
+      { item 11 is a '-' separator }
+      miDelete  = 12;         {   Delete a File ... }
+      miClear   = 13;         {   Clear Screen }
+
+   mBaud = 3;                 { "Baud" }
+      miB1200  = 1;
+      miB2400  = 2;
+      miB4800  = 3;
+      miB9600  = 4;
+      miB19200 = 5;
+      miB28800 = 6;             { above Apple's documented ceiling }
+      miB38400 = 7;
+
+   mVer = 4;                  { "?" - version / where to send feedback }
+      miAbout = 1;
+      miFonts = 2;             {   Font Survey }
+
+   mBook = 5;                 { "Bookmarks" }
+      miBkAdd  = 1;           {   Add ... }
+      miBkDel  = 2;           {   Remove ... }
+      { 3 is a separator }
+      miBkList = 4;           {   Show List }
+
+   lastBarMenu = 5;
+   lastMenu    = 5;
+
+   alertVerNum = 1;
+   alrtStub    = 10;
+
+   maxHeap = 8000;
+
+   lmxVersion = '1.1';         { shown in the title bar and the welcome }
+
+   { The text pane. }
+   paneLines = 64;            { lines the buffer remembers }
+   paneCols  = 80;            { max characters kept per line }
+
+type
+   TLine = string[paneCols];
+
+var
+   theEvent  : EventRecord;
+   myWindow  : WindowPtr;
+   toldToDie : boolean;
+   initing   : boolean;
+   myMenus   : array [1..lastMenu] of MenuInfo;
+   curBaud   : longint;       { current line speed; 9600 at launch }
+   allAlerts : TAlertFile;
+   myZone    : array [0..maxHeap] of integer;
+
+   { Pane model + view state.  View fields are valid while myWindow is  }
+   { open; the buffer is valid always.                                   }
+   paneBuf   : array [1..paneLines] of TLine;
+   paneCnt   : integer;       { lines in use; paneBuf[paneCnt] is current }
+   paneRect  : Rect;          { the pane's box, window coordinates }
+   lineHt    : integer;       { ascent+descent+leading }
+   ascentPx  : integer;
+   visLines  : integer;       { rows that fit in paneRect }
+   visRow    : integer;       { on-screen row (1..visLines) of current line }
+   curX      : integer;       { pen x for the next LmxWr on this line }
+   scrollRgn : RgnHandle;     { scratch region for ScrollRect }
+   paneUp    : boolean;       { true once LmxPane has run for this window }
+   cancelled : boolean;       { set when the user aborts an operation }
+   lineOpen  : boolean;       { the terminal left the port open; keep it }
+   termEcho  : boolean;       { terminal local echo }
+   termCRLF  : boolean;       { RETURN sends CR+LF (true) or CR only }
+   termBS    : boolean;       { Backspace sends BS (true) or DEL }
+   escState  : integer;       { terminal: 0 text, 1 after ESC, 2 in CSI, }
+                              { 3 one more byte to swallow                }
+   paneFont  : integer;       { font the pane draws in (0 = system) }
+   paneMono  : boolean;       { true if paneFont is fixed-width }
+   paneCW    : integer;       { character cell width in that font }
+   escArg    : integer;       { numeric parameter collected inside a CSI }
+   initStr   : Str255;        { modem init string from BBSLIST, or empty }
+
+procedure HandleFilerOp (var wantsOpen : boolean);
+
+procedure LmxPane;                    { bind the pane to myWindow }
+procedure DrawPane;                   { full repaint from the buffer }
+procedure LmxClear;                   { empty the buffer and the view }
+procedure LmxWr   (s : Str255);       { append to the current line }
+procedure LmxWrap (s : Str255);       { append, wrapping at the edge }
+procedure LmxWrLn (s : Str255);       { append, then start a new line }
+procedure LmxNum  (n : longint);      { append a decimal number }
+
+
+IMPLEMENTATION
+
+procedure PaneRowY (row : integer; var y : integer);
+begin
+   y := paneRect.top + (row - 1) * lineHt + ascentPx
+end;
+
+function InkOf (ch : char) : integer;
+{ Draw ch alone near the window's top left in the CURRENT font, count  }
+{ its black pixels, erase the scribble.  Used to tell a real glyph     }
+{ from the missing-character box: in an empty or symbol font slot      }
+{ every character draws as the same box, so i and M come out with      }
+{ identical ink and the slot is rejected.                               }
+var s    : string[1];
+    x, y : integer;
+    n    : integer;
+    box  : Rect;
+begin
+   box.left := 2;
+   box.top := 2;
+   box.right := 30;
+   box.bottom := 24;
+   EraseRect(box);
+   MoveTo(4, 20);
+   s := ' ';
+   s[1] := ch;
+   DrawString(s);
+   n := 0;
+   for y := 3 to 23 do
+      for x := 3 to 29 do
+         if GetPixel(x, y) then
+            n := n + 1;
+   EraseRect(box);
+   InkOf := n
+end;
+
+procedure LmxPane;
+{ Bind the pane to myWindow, choosing a FIXED-WIDTH font if the system  }
+{ has one: BBS menus and file listings are drawn for character cells,   }
+{ and a proportional font makes their columns drift.  The probe walks   }
+{ candidate font numbers and takes the first whose i, M and . are the  }
+{ same width at a size that fits 80 columns - AND whose M carries more  }
+{ ink than its i, which screens out empty slots where everything is    }
+{ the missing-glyph box (beta 17 fell into one of those).  If nothing  }
+{ qualifies the pane stays in the system font, as before.               }
+var fi   : FontInfo;
+    fid  : integer;
+    w1   : integer;
+    lh   : integer;
+    inkI : integer;
+    inkM : integer;
+begin
+   SetPort(myWindow);
+   paneFont := 0;
+   paneMono := false;
+   { First choice is PINNED: slot 8, the 8x12 fixed strike Tim picked  }
+   { from the beta 19 survey (80 columns x 8 px = 640, fits the 720-   }
+   { wide screen).  It still has to pass the width and ink tests, so a }
+   { different LOS install where slot 8 is something else falls        }
+   { through to the probe.                                              }
+   TextFont(8);
+   GetFontInfo(fi);
+   w1 := StringWidth('i');
+   lh := fi.ascent + fi.descent + fi.leading;
+   if (w1 = StringWidth('M')) and (w1 = StringWidth('.'))
+      and (w1 >= 5) and (w1 <= 10)
+      and (lh >= 8) and (lh <= 16) then begin
+      inkI := InkOf('i');
+      inkM := InkOf('M');
+      if (inkI > 0) and (inkM > inkI + 4) then begin
+         paneFont := 8;
+         paneMono := true;
+         paneCW := w1
+      end
+   end;
+   fid := 1;
+   while (fid <= 40) and (not paneMono) do begin
+      TextFont(fid);
+      GetFontInfo(fi);
+      w1 := StringWidth('i');
+      lh := fi.ascent + fi.descent + fi.leading;
+      if (w1 = StringWidth('M')) and (w1 = StringWidth('.'))
+         and (w1 >= 5) and (w1 <= 8)
+         and (lh >= 8) and (lh <= 16) then begin
+         inkI := InkOf('i');
+         inkM := InkOf('M');
+         if (inkI > 0) and (inkM > inkI + 4) then begin
+            paneFont := fid;
+            paneMono := true;
+            paneCW := w1
+         end
+         else
+            fid := fid + 1
+      end
+      else
+         fid := fid + 1
+   end;
+   if paneMono then
+      TextFont(paneFont);
+   if not paneMono then begin
+      TextFont(0);
+      paneCW := StringWidth('0')
+   end;
+   GetFontInfo(fi);
+   lineHt   := fi.ascent + fi.descent + fi.leading;
+   ascentPx := fi.ascent;
+   paneRect := myWindow^.portRect;
+   InsetRect(paneRect, 8, 6);
+   visLines := (paneRect.bottom - paneRect.top) div lineHt;
+   if visLines < 1 then visLines := 1;
+   if scrollRgn = nil then
+      scrollRgn := NewRgn;
+   if paneCnt < 1 then begin      { first ever open: empty buffer }
+      paneCnt := 1;
+      paneBuf[1] := ''
+   end;
+   visRow := paneCnt;             { view state valid from the start }
+   if visRow > visLines then visRow := visLines;
+   curX := paneRect.left + StringWidth(paneBuf[paneCnt]);
+   paneUp := true
+end;
+
+procedure DrawPane;
+{ Full repaint from the buffer -- the update event's view of truth.     }
+var first, i, row, y : integer;
+begin
+   SetPort(myWindow);
+   EraseRect(myWindow^.portRect);
+   first := paneCnt - visLines + 1;
+   if first < 1 then first := 1;
+   row := 1;
+   for i := first to paneCnt do begin
+      PaneRowY(row, y);
+      MoveTo(paneRect.left, y);
+      DrawString(paneBuf[i]);
+      row := row + 1
+   end;
+   visRow := paneCnt - first + 1;
+   curX := paneRect.left + StringWidth(paneBuf[paneCnt])
+end;
+
+procedure LmxClear;
+begin
+   paneCnt := 1;
+   paneBuf[1] := '';
+   if paneUp and (myWindow <> nil) then
+      DrawPane
+end;
+
+procedure LmxWr {s : Str255};
+var y : integer;
+begin
+   paneBuf[paneCnt] := concat(paneBuf[paneCnt], s);
+   if length(paneBuf[paneCnt]) > paneCols then
+      paneBuf[paneCnt][0] := chr(paneCols);
+   if paneUp and (myWindow <> nil) then begin
+      SetPort(myWindow);
+      PaneRowY(visRow, y);
+      MoveTo(curX, y);
+      DrawString(s);
+      curX := curX + StringWidth(s)
+   end
+end;
+
+procedure LmxWrap {s : Str255};
+{ Append s, breaking at spaces when the line would run past the pane's  }
+{ right edge.  Words longer than a whole line are broken hard.          }
+var w     : Str255;
+    ch    : char;
+    i, sp : integer;
+begin
+   i := 1;
+   while i <= length(s) do begin
+      { collect one word plus any single trailing space }
+      w := '';
+      while (i <= length(s)) and (s[i] <> ' ') do begin
+         w := concat(w, ' ');
+         w[length(w)] := s[i];
+         i := i + 1
+      end;
+      if (i <= length(s)) and (s[i] = ' ') then begin
+         w := concat(w, ' ');
+         i := i + 1
+      end;
+      { hard-break a word too long to ever fit }
+      while StringWidth(w) > (paneRect.right - paneRect.left) do begin
+         sp := length(w) div 2;
+         LmxWrap(copy(w, 1, sp));
+         w := copy(w, sp + 1, length(w) - sp)
+      end;
+      { wrap if it will not fit on what is left of this line }
+      if paneUp and (myWindow <> nil) then
+         if (curX + StringWidth(w)) > paneRect.right then
+            LmxWrLn('');
+      LmxWr(w)
+   end
+end;
+
+procedure LmxWrLn {s : Str255};
+var i, y : integer;
+begin
+   if length(s) > 0 then
+      LmxWrap(s);
+   { advance the model }
+   if paneCnt < paneLines then
+      paneCnt := paneCnt + 1
+   else begin
+      for i := 1 to paneLines - 1 do
+         paneBuf[i] := paneBuf[i + 1]
+   end;
+   paneBuf[paneCnt] := '';
+   { advance the view }
+   if paneUp and (myWindow <> nil) then begin
+      SetPort(myWindow);
+      if visRow < visLines then
+         visRow := visRow + 1
+      else begin
+         ScrollRect(paneRect, 0, -lineHt, scrollRgn);
+         PaneRowY(visRow, y)      { freed bottom row; repainted by the }
+      end;                        { next LmxWr into it                  }
+      curX := paneRect.left
+   end
+end;
+
+procedure LmxNum {n : longint};
+var s   : Str255;
+    tmp : string[1];
+    d   : integer;
+begin
+   if n <= 0 then
+      LmxWr('0')
+   else begin
+      s := '';
+      while n > 0 do begin
+         d := n mod 10;
+         tmp := '0';
+         tmp[1] := chr(ord('0') + d);
+         s := concat(tmp, s);
+         n := n div 10
+      end;
+      LmxWr(s)
+   end
+end;
+
+{------------------------------------------------------------------------}
+{ The Filer handshake (stage 1, plus the paneUp bookkeeping).            }
+{------------------------------------------------------------------------}
+
+procedure HandleFilerOp {var wantsOpen : boolean};
+var fx  : FilerExt;
+    err : integer;
+begin
+   wantsOpen := false;
+   GetAddParms(err, theEvent, fx);
+
+   case fx.theFlrOp of
+
+      fcNone :
+         wantsOpen := true;
+
+      fcResume :
+         TellFiler(err, docClosd, internalError, theEvent.who);
+
+      fcClose, fcSuspend, fcShred :
+         begin
+            myWindow := nil;
+            paneUp := false;             { view gone; buffer kept }
+            TellFiler(err, docClosd, allOK, theEvent.who)
+         end;
+
+      fcCopy, fcPut :
+         TellFiler(err, docNotXfered, internalError, theEvent.who);
+
+      fcDfClose :
+         TellFiler(err, dfClosed, allOK, theEvent.who);
+
+      fcTerminate :
+         toldToDie := true;
+
+      otherwise
+
+   end
+end;
+
+end.
