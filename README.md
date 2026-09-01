@@ -223,6 +223,12 @@ corrupted copies whenever the Filer serialized the tool to a floppy.
 
 ## Distributing on floppy
 
+The image in this repository, `LISAComV1_1_AtkinsonPoint_v1_1_Image.dc42`,
+is the combined distribution floppy: LISACom 1.1 together with
+Atkinsonpoint 1.1 (LISA Slide Show) and its nine-picture starter show.
+The LISACom build on it is unchanged from the August 25 release; the
+slideshow is the 1.1 update.
+
 With correct icons, the tool duplicates to a floppy normally (Duplicate
 is the copy; dragging is a move), runs from the floppy, and duplicates
 onto another volume's drive -- including a volume that previously had
