@@ -1,0 +1,27 @@
+LISACom 1.7 FOR THE APPLE LISA  (tool 419306)  --  from The Apple Lisa BBS
+
+  WHAT IT IS: a desktop terminal and file-transfer tool for Lisa Office
+  System 3.x.  Dials boards through a serial WiFi modem, XMODEM/YMODEM both
+  ways, bookmarks, and it knows which disk it is working on.
+
+  GETTING IT ONTO A LISA THE FIRST TIME
+    Download LISACOM_1_7.dc42 (floppy image) from Floppy Images > Releases,
+    write it to a floppy (or mount it on a Floppy Emu), boot the Office
+    System, open the floppy and DUPLICATE the LISACom icon onto your disk
+    (Duplicate copies; dragging moves).  Copy BBSLIST.TEXT beside it in the
+    Workshop File Manager if you want the starter bookmarks, or just add
+    bookmarks from the desktop.
+
+  UPDATING FROM 1.1 THROUGH 1.6
+    Same floppy: duplicate the new LISACom onto your disk.  Your BBSLIST.TEXT
+    is kept if it is on the same disk as the tool.
+
+  FIRST CALL
+    Preferences > Connect Devices: Serial B = Serial Cable (once).  Open
+    LISACom, Baud > 9600, Bookmarks > Dial > LISA BBS.  Downloads: choose
+    protocol Y (plain YMODEM) on the board; press RETURN at LISACom's
+    "Save as" to take the sender's name.  The file lands on LISACom's
+    working volume (XModem > Use Volume ... to change it).
+
+  Sources, README and changelog: LISACOM_1_7_SRC.zip in Lisa Office System
+  Software > Source, and github.com/GyroPilot/Apple-LISACom.

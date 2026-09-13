@@ -1,0 +1,33 @@
+LISACOM_1_7.dc42 -- what goes on the floppy and how to check it
+
+ON THE FLOPPY
+  The LISACom 1.7 tool, duplicated from the 2/10's boot disk (NOT the FPGA
+  image: 1.7 was proven on the 2/10).  Duplicate = copy; dragging = move.
+  BBSLIST.TEXT (839 bytes, the starter list) -- receive it onto the floppy
+  with LISACom (-LOWER-BBSLIST.TEXT at Save as) or File Manager Copy it.
+  Optional: LISA_INSTALL.TXT.
+  Nothing else: no scratch .PIX, no old tool copies.
+
+BEFORE YOU DUPLICATE
+  About box says 1.7 on the copy you are duplicating from.
+  Use Volume on that copy lists the boot disk as entry 1 (i.e. it IS the
+  boot-disk copy, not a copy on Disk).
+
+AFTER IMAGING (on the PC)
+  python3 lisapkg.py verify is for .PKG files, not floppies -- instead run
+  the packager's catalog reader to list the image:
+     python3 lisapkg.py build --dc42 LISACOM_1_7.dc42 --tool 419306 \
+        --name LISACom --os 3.1 --all-files --overlay keep --out check.PKG
+  It must list exactly {T419306}Obj, {T419306}PHRASE, {T419306}ICON,
+  {T419306}ICON.BACKUP, {t419306}icon2 (sizes: Obj about 30-33 K, ICON 814)
+  and verify clean; delete check.PKG afterwards.  Send me the listing and I
+  will compare the Obj size against the 2/10's LMX.OBJ.
+
+FLOPPY EMU / FPGA CAUTION (from the 1.1 README)
+  Floppies written by a real Lisa were reliable every time; the LisaFPGA's
+  floppy port sometimes dropped blocks on sustained writes.  Write the
+  master on the 2/10.
+
+NAME
+  LISACOM_1_7.dc42 -- underscores, one period (the BBS and the Lisa are both
+  happier that way).
