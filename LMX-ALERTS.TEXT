@@ -1,5 +1,7 @@
 ; ==========================================================================
-;  LMX-ALERTS.TEXT -- LISACom (was LISA XModem Util)  ***  1.0  ***
+;  LMX-ALERTS.TEXT -- LISACom (was LISA XModem Util)  ***  1.6  ***
+;  1.6 (13-Sep-2026): XModem gains 'Use Volume ...' as item 12; Delete a
+;  File is now 13 and Clear Screen 14 (mi* in LMX-GLOBALS moved with them).
 ;  Beta 8 menu: XModem gains 'Dial .../D' between Terminal and Hang Up.
 ;  Menu items are matched by POSITION, so this file must be in step with
 ;  the mi* constants in LMX-GLOBALS.TEXT.
@@ -73,6 +75,7 @@ Terminal .../T
 Dial .../D
 Hang Up
 -
+Use Volume ...
 Delete a File ...
 Clear Screen/K
 

@@ -1,0 +1,49 @@
+$EXEC
+${==========================================================================}
+${ LMX-MAKE.TEXT -- build LISACom: compile, link, install the executable   }
+${ as tool number 419306 (serial-derived, per Apple guidance for community-   }
+${ unique tool numbers), compile+install the phrase file, and register the }
+${ tool with the Office System under the name LISACom.                     }
+${                                                                          }
+${ THE TOOL NUMBER EXISTS ONLY IN THIS FILE.  The Pascal recovers its      }
+${ number from its own installed pathname at run time; to renumber,        }
+${ change every 419306 below and re-run this script.                          }
+${                                                                          }
+${ FIRST-RUN RULE: the two Deletes below assume that the staging files    }
+${ T419306 Obj and T419306 PHRASE (brace-wrapped names on disk) already   }
+${ exist -- they keep the Copy's prompt count deterministic.  On a disk   }
+${ where either is missing, create them ONCE by hand in File-mgr:         }
+${ Copy LMX/LMX.OBJ to the Obj staging name, and Copy LMX/COMP.TEXT to    }
+${ the PHRASE staging name.  After that this script runs forever.         }
+${                                                                          }
+${ Exec traps honoured: braces in data need a ~ escape; a comment-only     }
+${ line emits a bare [RETURN] (used deliberately for InstallTool's device  }
+${ question, avoided elsewhere by making comment lines exec lines).        }
+${==========================================================================}
+$SUBMIT LMX/COMP
+$SUBMIT LMX/LINK
+${                                                                          }
+${ Install the executable under its tool name.                             }
+F{ilemgr}D{elete}~{T419306~}Obj
+Y{es}D{elete}~{T419306~}PHRASE
+Y{es}C{opy}LMX/LMX.OBJ
+~{T419306~}Obj
+Q{uit}
+${                                                                          }
+${ Compile the phrase file straight to its installed name: the Alert tool  }
+${ takes the source and an output STEM, appending PHRASE itself.           }
+R{un}Alert
+LMX/ALERTS.TEXT
+~{T419306~}
+${                                                                          }
+${ Register with the Office System.  For a tool that does NOT make         }
+${ documents the dialogue is EXACTLY SIX answers; a seventh would shift    }
+${ every later line and install the tool under the name "N".               }
+R{un}InstallTool
+Y              {1: auto-overwrite an existing tool with the same NUMBER}
+{2: blank = the PARAPORT device -- this comment-only line is the [RETURN]}
+419306            {3: the tool number}
+N              {4: does NOT make documents -> question 4a is never asked}
+N              {5: no special opening rectangle}
+LISACom
+$ENDEXEC

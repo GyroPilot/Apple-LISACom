@@ -1,26 +1,46 @@
-LISACom public 1.1 -- Lisa Pascal sources (as released)
+LISACom public 1.7 -- Lisa Pascal sources (as released, 13 September 2026)
 
-LMX-MAIN.TEXT      the program (terminal, dial, XMODEM/YMODEM engines)
-LMX-GLOBALS.TEXT   unit LmxGlobals: menu constants, text pane, Filer
-                   handshake.  lmxVersion (the About box string) lives
-                   here.
-LMX-ALERTS.TEXT    alerts + menus (Alert tool input; menus match the
-                   mi* constants in GLOBALS BY POSITION)
-fmt_text.py        REQUIRED for building: converts each source to the
-                   Workshop paged .TEXT format (1024-byte header page,
-                   no line straddling a 1024 boundary, bare CR line
-                   endings).  Raw text files will not compile.
+sources/LMX-MAIN.TEXT      the program (terminal, dial, hang-up, XMODEM/YMODEM
+                           engines, working volume, bookmarks)
+sources/LMX-GLOBALS.TEXT   unit LmxGlobals: menu constants, text pane, Filer
+                           handshake.  lmxVersion (the About box string) lives
+                           here.
+sources/LMX-ALERTS.TEXT    alerts + menus (Alert tool input; menus match the
+                           mi* constants in GLOBALS BY POSITION -- 1.6 added
+                           "Use Volume ..." as XModem item 12)
+sources/LMX-MAKE.TEXT      the Workshop exec: compile, link, stage, Alert tool,
+                           InstallTool (tool 419306, name LISACom).  New in the
+                           repo with 1.7; it was only on the Lisa before.
+sources/fmt_text.py        REQUIRED for building: converts each source to the
+                           Workshop paged .TEXT format (1024-byte header page,
+                           no line straddling a 1024 boundary, bare CR line
+                           endings).  Raw text files will not compile.
+sources/LMXMAIN17.TEXT     the three sources already formatted, ready to send
+sources/LMXGLOBALS17.TEXT  to the Lisa (116,736 / 16,384 / 4,096 bytes)
+sources/LMXALERTS17.TEXT
+sources/fix_dc42.py        recomputes a DiskCopy 4.2 image's header checksums (some
+                           imaging tools leave them zero)
+LISACOM_1_7.dc42           the distribution floppy (MD5 918b46ae67befd0cea9f0a93c8fb6d5d)
+LISACOM_1_7_ATKINSONPOINT_1_1.dc42  combined floppy with Atkinsonpoint 1.1 + 9 slides (MD5 5e690df510db43a54ca55a09ec603a27)
+BBSLIST.TEXT               starter bookmark file, eleven boards, LISA BBS first
+                           (CR line endings; save beside the tool)
 
-Build: format all three on a modern machine, move them to the Lisa's
-LMX/ slots (LISACom itself is the natural carrier: Receive via
-YMODEM), then from the Workshop: R <LMX/MAKE.  MAIN, GLOBALS and
-ALERTS change in lockstep whenever menus change.
+Build: send the three formatted files to their LMX/ names (LISACom itself
+is the natural carrier: Receive via YMODEM, type LMX/MAIN.TEXT at Save as),
+Save & Put Away the running tool, empty the Wastebasket, then from the
+Workshop: R <LMX/MAKE.  Afterwards L LMX/= must show a NEW LMX.OBJ -- the
+exec does not stop on a link error.  README.md, Building from source, has
+the full list of things that bite.
 
 Hard-won notes living in the comments: the serial typeahead buffer is
-pinned at 1024 -- larger kills receive on a Lisa 2/10; the terminal
-is model-first (drain the port, paint once) so BBS menu bursts cannot
-outrun a 5 MHz machine; Lisa Pascal cannot index a string constant
-(see cpMap -> cpTab); and '-' is not legal in a catalog name.
+pinned at 1024 -- larger kills receive on a Lisa 2/10; the terminal is
+model-first (drain the port, paint once) so BBS menu bursts cannot outrun
+a 5 MHz machine; Lisa Pascal cannot index a string constant (see cpMap ->
+cpTab); '-' is not legal in a catalog name; a VAR parameter must be
+declared with the caller's exact named type (Str255 and Pathname are not
+interchangeable); global data is capped at 32K by the linker and this
+program is right under it; a device with no volume still answers LOOKUP
+(check fsi.mounted); closing the serial port does not hang up a WiFi modem
+(+++ / ATH with guard times does).
 
-README.md is the full manual.  The .dc42 is the released distribution
-floppy, shared with the AtkinsonPoint repo (both tools, one disk).
+README.md is the full manual; CHANGELOG.md lists 1.2 - 1.7.

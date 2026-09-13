@@ -1,6 +1,46 @@
 program LmxUtil;
 
-{ LMX-MAIN.TEXT -- LISACom (was LISA XModem Util)  ***  1.3  ***          }
+{ LMX-MAIN.TEXT -- LISACom (was LISA XModem Util)  ***  1.7  ***          }
+{ 1.7 (13-Sep-2026): (1) Hang Up (and Dial's hang-up-first) now sends  }
+{     +++ / ATH to the modem with Hayes guard times before closing the  }
+{     port -- 1.2 only closed the port and the WiRSa stayed online.     }
+{     (2) Use Volume marks an entry whose free count equals an earlier  }
+{     one as probably the same disk (a 2/10 answers -UPPER- for -#12-). }
+{ 1.6d: Use Volume skips devices that answer LOOKUP but have no volume  }
+{     mounted (FPGA listed -#2#1-, -LOWER-, -UPPER- with nothing there).  }
+{ 1.6c: maxPick 130 -> 100 (990 bytes): 1.6b still linked over 32K.    }
+{ 1.6b: volume variables are E_Name -- the 1.6 link failed with 'More    }
+{     than 32K of globals' (9 x 256-byte Pathnames tipped it over).     }
+{ 1.6 (13-Sep-2026): WORKING VOLUME.  XModem > Use Volume lists the      }
+{     mounted volumes (LOOKUP on the usual prefixes, free blocks shown) }
+{     and picks one; receives, List Files, browse and Delete then use   }
+{     it (curVol).  Starts as the volume LISACom runs from.  Bookmarks  }
+{     stay with the tool (myVol).  The banner names the working volume. }
+{ 1.5 (13-Sep-2026): the last two bare names on the boot prefix:        }
+{     BBSLIST.TEXT is read and written on LISACom's own volume (myVol), }
+{     and a bare name typed at "File to send" is looked up there too  }
+{     (HomePath, as receives have done since 1.2).                      }
+{ 1.4 (13-Sep-2026): (1) a browse pick and Delete a File use the FULL   }
+{     path (listVol + name) -- 1.3 listed the right volume but opened   }
+{     and KILLed the bare name, i.e. on the boot prefix; (2) at "File  }
+{     to send" a bare -vol- browses that volume; (3) the YMODEM block-0 }
+{     name is the bare name, not the typed -vol-name path.             }
+{ 1.3 (13-Sep-2026): List Files, the Send browse list, Delete a File   }
+{     and the free-blocks line all use LISACom's own volume (myVol);   }
+{     the volume name is shown in the Volume line.  Found on the 2/10:  }
+{     a download onto Disk did not appear in List Files.               }
+{ 1.2b (13-Sep-2026): HomePath takes a Pathname (VAR params must match  }
+{     the caller's type exactly; fnm is a Pathname).  No other change.   }
+{                                                                        }
+{ 1.2 (13-Sep-2026), four field fixes from the LOS Installer test:      }
+{ (1) Received files are saved on the volume LISACom runs from (myVol), }
+{     not the boot prefix: a bare name gets myVol in front; a name that }
+{     starts with # gets the missing leading hyphen; a full -vol-name  }
+{     is used as typed.  The status line shows where the file went.     }
+{ (2) After a receive the pane says how to get back to the session.     }
+{ (3) Dialing a bookmark while the line is open hangs up first, so ATZ  }
+{     and ATDT never go to the board as login attempts.                  }
+{ (4) With no BBSLIST.TEXT, The Apple Lisa BBS is the built-in bookmark. }
 {                                                                        }
 { THIS LINE IS THE VERSION CHECK.  If the Lisa's About box disagrees      }
 { with the number above, a stale file was sent.  (The authoritative      }
@@ -141,6 +181,7 @@ const
    stAskDelN = 12;            { Delete: which file number }
    stConfDel = 13;            { Delete: Y to confirm }
    stYSave   = 14;            { YMODEM receive: save-as name }
+   stAskVol  = 15;            { Use Volume: which number (1.6) }
 
    maxBook   = 16;            { bookmarks the tool will hold }
    bookNmLen = 24;            { name length kept }
@@ -151,8 +192,10 @@ const
 
    pageLines = 16;            { listing lines between pauses }
 
-   maxPick   = 130;           { files the pickers will list; 130 pays }
-                              { for the 1 KB CRC table under the 32K cap }
+   maxVols   = 9;             { 1.6: volume prefixes Use Volume tries }
+   maxPick   = 100;           { files the pickers will list.  1.6c: was }
+                              { 130; 30 x 33 bytes buys the volume list }
+                              { room under the 32K globals cap.          }
 
 type
    Byte = -128..127;
@@ -459,9 +502,65 @@ begin
       CLOSE_OBJECT(ecode, prefnum)
 end;
 
-procedure HangUp;
+procedure ResumeHint;
+{ 1.2: after a transfer, say how to get back to the BBS session.       }
 begin
    if lineOpen then begin
+      LmxWrLn('The line is still open: XModem menu > Terminal resumes');
+      LmxWrLn('the BBS session.  Files were saved on this volume.')
+   end
+end;
+
+procedure Snooze (ms : integer);
+{ 1.7: block this process for ms milliseconds (OS DELAY_TIME).  Used   }
+{ for the Hayes guard time around +++.                                  }
+var iv : timestmp_interval;
+    ct : time_rec;
+    e  : integer;
+begin
+   iv.sec := ms div 1000;
+   iv.msec := ms mod 1000;
+   ct.year := 0;
+   ct.day := 1;
+   ct.hour := 0;
+   ct.minute := 0;
+   ct.second := 0;
+   ct.msec := 0;
+   DELAY_TIME(e, iv, ct)
+end;
+
+procedure HangUp;
+{ 1.7: hang up the MODEM, not just the port.  1.2 closed the serial     }
+{ port and called it hung up; the WiRSa's session stayed connected and  }
+{ the next ATDT went to the board as keystrokes (seen on the 2/10).     }
+{ Hayes: a second of silence, +++, a second of silence, then ATH.       }
+var b, n : integer;
+    tmp  : string[1];
+begin
+   if lineOpen then begin
+      LmxWrLn('hanging up: +++ then ATH (about three seconds) ...');
+      Snooze(1200);
+      SendB(ord('+'));
+      SendB(ord('+'));
+      SendB(ord('+'));
+      Snooze(1200);
+      SendB(ord('A'));
+      SendB(ord('T'));
+      SendB(ord('H'));
+      SendB(13);
+      Snooze(800);
+      n := 0;                          { show what the modem said }
+      while GetB(b) and (n < 200) do begin
+         n := n + 1;
+         if (b >= 32) and (b < 127) then begin
+            tmp := ' ';
+            tmp[1] := chr(b);
+            LmxWr(tmp)
+         end
+         else if b = 13 then
+            LmxWrLn('')
+      end;
+      LmxWrLn('');
       lineOpen := false;
       CLOSE_OBJECT(ecode, prefnum);
       LmxWrLn('line closed.')
@@ -520,6 +619,21 @@ end;
 { The three operations.                                                  }
 {------------------------------------------------------------------------}
 
+procedure HomePath (var nm : Pathname);   { 1.2b: was Str255 -> Error 125 }
+{ 1.2: make a save name land on LISACom's own volume.  A leading '-'   }
+{ means the user typed a full path: keep it.  A leading '#' is a full   }
+{ path missing its hyphen (typed -#2#1- as #2#1-): add the hyphen.      }
+{ Anything else is a bare name: prefix curVol (the working volume).     }
+var tmp : string[1];
+begin
+   if length(nm) = 0 then
+      exit(HomePath);
+   if nm[1] = '#' then
+      nm := concat('-', nm)
+   else if nm[1] <> '-' then
+      nm := concat(curVol, nm)           { 1.6: working volume }
+end;
+
 procedure DoRecvOp (var name : Str255);
 { cancelled is cleared here and tested throughout: any keypress during   }
 { the transfer aborts it cleanly instead of locking the window until     }
@@ -538,6 +652,7 @@ begin
    { preemptable, so the rest of the desktop stays healthy for the      }
    { whole minutes-long operation.                                      }
    fnm := name;
+   HomePath(fnm);                      { 1.2: onto this volume }
    Sched_Class(schedErr, false);
    MAKE_FILE(ecode, fnm, 0);
    Sched_Class(schedErr, true);
@@ -673,6 +788,7 @@ begin
    Sched_Class(schedErr, false);
    CLOSE_OBJECT(ecode, frefnum);
    Sched_Class(schedErr, true);
+   ResumeHint;
    PortDn
 end;
 
@@ -1011,6 +1127,7 @@ begin
       SanName(hdrName);
       fnm := hdrName
    end;
+   HomePath(fnm);                      { 1.2: onto this volume }
    LmxWr('receiving into ');
    LmxWr(fnm);
    if hdrSize > 0 then begin
@@ -1162,6 +1279,7 @@ begin
       LmxNum(fileCnt);
       LmxWrLn(' files received')
    end;
+   ResumeHint;
    PortDn
 end;
 
@@ -1251,6 +1369,7 @@ var blk, nblocks, tries : integer;
 begin
    cancelled := false;
    fnm := name;
+   HomePath(fnm);                      { 1.5: bare name = this volume }
    Sched_Class(schedErr, false);
    OPEN(ecode, fnm, frefnum, [DRead]);
    Sched_Class(schedErr, true);
@@ -1434,7 +1553,7 @@ procedure DoSendYOp (var name : Str255);
 { name becomes '_' for the PC's benefit.  PC side: Tera Term File /     }
 { Transfer / YMODEM / Receive.                                           }
 var blk, nblocks, tries : integer;
-    b, d, i             : integer;
+    b, d, i, k          : integer;
     done, fail, acked   : boolean;
     started             : boolean;
     hinted              : boolean;
@@ -1444,6 +1563,7 @@ var blk, nblocks, tries : integer;
 begin
    cancelled := false;
    fnm := name;
+   HomePath(fnm);                      { 1.5: bare name = this volume }
    Sched_Class(schedErr, false);
    OPEN(ecode, fnm, frefnum, [DRead]);
    Sched_Class(schedErr, true);
@@ -1524,9 +1644,15 @@ begin
       pkt[2] := 255 - 256;              { complement of block number 0 }
       for i := 0 to 127 do
          pkt[i + 3] := 0;
+      { 1.4: send the bare name -- skip a -vol- prefix (names cannot   }
+      { contain '-', so the last hyphen ends the prefix).              }
+      k := 0;
+      if fnm[1] = '-' then
+         for d := 2 to length(fnm) do
+            if fnm[d] = '-' then k := d;
       i := 0;
-      while (i < length(fnm)) and (i < 60) do begin
-         d := ord(fnm[i + 1]);
+      while (k + i < length(fnm)) and (i < 60) do begin
+         d := ord(fnm[k + i + 1]);
          if d = ord('/') then d := ord('_');
          pkt[i + 3] := d;
          i := i + 1
@@ -1713,14 +1839,16 @@ begin
 end;
 
 procedure GatherCat;
-{ Read the whole boot-volume catalog into pickName once.                }
+{ Read the catalog of LISACom's own volume (myVol) into pickName once.  }
+{ 1.3: was hard-coded to -#12-, so List/Send/Delete saw the boot disk   }
+{ even when the tool and its downloads were on another volume.         }
 var path     : Pathname;
     prefix   : E_Name;
     entry    : E_Name;
     schedErr : integer;
 begin
    Sched_Class(schedErr, false);
-   path := '-#12-';
+   path := listVol;                    { 1.4: the volume being listed }
    prefix := '';
    pickCnt := 0;
    RESET_CATALOG(ecode, path);
@@ -1791,13 +1919,13 @@ begin
 end;
 
 procedure ShowFree;
-{ One line: free blocks on the boot volume.  A full disk can crash the   }
+{ One line: free blocks on LISACom's own volume.  A full disk can crash  }
 { machine mid-write, so it is worth a glance before receiving anything.  }
 var fsi   : Fs_Info;
     fpath : Pathname;
     fb    : longint;
 begin
-   fpath := '-#12-';
+   fpath := listVol;                   { 1.4: the volume being listed }
    LOOKUP(ecode, fpath, fsi);
    if ecode <> 0 then begin
       LmxWr('(free space unknown, LOOKUP ecode ');
@@ -1806,15 +1934,109 @@ begin
       exit(ShowFree)
    end;
    fb := fsi.freecount;
-   LmxWr('Volume: ');
+   LmxWr('Volume ');
+   LmxWr(listVol);
+   LmxWr(': ');
    LmxNum(fb);
    LmxWr(' free blocks (about ');
    LmxNum(fb div 2);
    LmxWrLn(' KB).')
 end;
 
+{------------------------------------------------------------------------}
+{ 1.6  Use Volume: find the mounted volumes and make one the working     }
+{ volume.  LOOKUP on a device prefix answers for a mounted volume; an    }
+{ empty slot or drive returns an error and is skipped.  The tool's own   }
+{ volume is always entry 1.                                              }
+{------------------------------------------------------------------------}
+
+procedure TryVol (var pfx : E_Name);
+var fsi      : Fs_Info;
+    ec       : integer;
+    schedErr : integer;
+    path     : Pathname;
+    ns       : Str255;
+    dup, k   : integer;
+begin
+   if volCnt >= maxVols then
+      exit(TryVol);
+   if pfx = myVol then
+      exit(TryVol);                    { already entry 1 }
+   path := pfx;
+   Sched_Class(schedErr, false);
+   LOOKUP(ec, path, fsi);
+   Sched_Class(schedErr, true);
+   if ec <> 0 then
+      exit(TryVol);
+   if not fsi.mounted then               { 1.6d: a device with no volume }
+      exit(TryVol);                      { answers LOOKUP too (0 free)   }
+   dup := 0;
+   for k := 1 to volCnt do
+      if volFree[k] = fsi.freecount then dup := k;
+   volCnt := volCnt + 1;
+   volList[volCnt] := pfx;
+   volFree[volCnt] := fsi.freecount;
+   NumStr(volCnt, ns);
+   LmxWr(ns);
+   LmxWr('  ');
+   LmxWr(pfx);
+   LmxWr('  ');
+   LmxNum(fsi.freecount);
+   LmxWr(' free blocks');
+   if dup > 0 then begin               { 1.7: same disk under another name? }
+      LmxWr('  (same free count as ');
+      NumStr(dup, ns);
+      LmxWr(ns);
+      LmxWr(' - probably the same disk)')
+   end;
+   LmxWrLn('')
+end;
+
+procedure StartUseVol;
+var pfx      : E_Name;
+    fsi      : Fs_Info;
+    ec       : integer;
+    schedErr : integer;
+    path     : Pathname;
+begin
+   LmxWrLn('');
+   LmxWrLn('Mounted volumes:');
+   volCnt := 1;
+   volList[1] := myVol;
+   volFree[1] := -1;
+   path := myVol;
+   Sched_Class(schedErr, false);
+   LOOKUP(ec, path, fsi);
+   Sched_Class(schedErr, true);
+   if ec = 0 then
+      volFree[1] := fsi.freecount;
+   LmxWr('1  ');
+   LmxWr(myVol);
+   LmxWr('  ');
+   if volFree[1] >= 0 then begin
+      LmxNum(volFree[1]);
+      LmxWr(' free blocks')
+   end;
+   LmxWrLn('  (this tool''s volume)');
+   pfx := '-#12-';   TryVol(pfx);
+   pfx := '-#2#1-';  TryVol(pfx);
+   pfx := '-#2#2-';  TryVol(pfx);
+   pfx := '-#3#1-';  TryVol(pfx);
+   pfx := '-#3#2-';  TryVol(pfx);
+   pfx := '-#1#1-';  TryVol(pfx);
+   pfx := '-#1#2-';  TryVol(pfx);
+   pfx := '-LOWER-'; TryVol(pfx);
+   pfx := '-UPPER-'; TryVol(pfx);
+   LmxWr('Working volume now: ');
+   LmxWrLn(curVol);
+   uiState := stAskVol;
+   inLine := '';
+   LmxWr('Use which number (RETURN cancels): ')
+end;
+
 procedure DoListOp;
 begin
+   listVol := curVol;                  { 1.6: working volume }
    ShowFree;
    GatherCat;
    if pickCnt = 0 then begin
@@ -1836,6 +2058,7 @@ procedure StartDelete;
 begin
    LmxWrLn('');
    LmxWrLn('Delete a file from this disk.  Pick a number, then confirm.');
+   listVol := curVol;                  { 1.6: working volume }
    ShowFree;
    GatherCat;
    if pickCnt = 0 then begin
@@ -1883,7 +2106,7 @@ begin
       LmxWrLn('not deleted.');
       exit(DoDelete)
    end;
-   dpath := concat('-#12-', delName);
+   dpath := concat(listVol, delName);  { 1.4: was '-#12-' }
    KILL_OBJECT(ecode, dpath);
    if ecode = 0 then begin
       LmxWr('deleted: ');
@@ -2203,7 +2426,7 @@ begin
 end;
 
 procedure LoadBooks;
-{ Read -#12-BBSLIST.TEXT if it exists.  Silent when absent: bookmarks   }
+{ Read BBSLIST.TEXT on LISACom's own volume, if it exists.  Absent:     }
 { are optional.                                                          }
 var path     : Pathname;
     fref     : integer;
@@ -2216,12 +2439,18 @@ begin
    bookCnt := 0;
    initStr := '';
    bookMsg := 'no BBSLIST.TEXT found (bookmarks are optional)';
-   path := 'BBSLIST.TEXT';
+   path := concat(myVol, 'BBSLIST.TEXT');   { 1.5: this volume }
    Sched_Class(schedErr, false);
    OPEN(ecode, path, fref, [DRead]);
    Sched_Class(schedErr, true);
-   if ecode > 0 then
-      exit(LoadBooks);
+   if ecode > 0 then begin
+      { 1.2: no file -> one built-in bookmark, The Apple Lisa BBS }
+      line := 'NAME LISA BBS|ATDT theapplelisabbs.duckdns.org:1983';
+      line := concat(line, '|The Apple Lisa BBS - 9600 baud, protocol Y');
+      BookAdd(line);
+      bookMsg := 'no BBSLIST.TEXT: built-in bookmark LISA BBS';
+      exit(LoadBooks)
+   end;
    line := '';
    repeat
       Sched_Class(schedErr, false);
@@ -2283,7 +2512,7 @@ var path     : Pathname;
     schedErr : integer;
     e        : integer;
 begin
-   path := 'BBSLIST.TEXT';
+   path := concat(myVol, 'BBSLIST.TEXT');   { 1.5: this volume }
    Sched_Class(schedErr, false);
    MAKE_FILE(e, path, 0);              { 890 = exists, fine }
    OPEN(e, path, fref, [DWrite]);
@@ -2389,6 +2618,10 @@ begin
    LmxWrLn('');
    LmxWr('Dialing ');
    LmxWrLn(bookName[n]);
+   if lineOpen then begin              { 1.2: never dial into an open }
+      LmxWrLn('hanging up the open line first.');   { session      }
+      HangUp
+   end;
    TermEnter;                          { opens the line if needed }
    if uiState <> stTermnl then
       exit(DialBook);                  { the port would not open }
@@ -2554,6 +2787,21 @@ begin
    PickedNum := v
 end;
 
+procedure PickVol;
+{ 1.6: the answer to Use Volume. }
+var k : integer;
+begin
+   k := PickedNum;
+   if (k < 1) or (k > volCnt) then begin
+      LmxWrLn('that is not one of the numbers listed.');
+      exit(PickVol)
+   end;
+   curVol := volList[k];
+   LmxWr('Working volume is now ');
+   LmxWr(curVol);
+   LmxWrLn(' - receives, List, browse and Delete use it.')
+end;
+
 procedure StartPrompt (which : integer);
 begin
    uiState := which;
@@ -2638,8 +2886,18 @@ begin
       which := uiState;
       uiState := stIdle;
       LmxWrLn('');
-      if (length(inLine) = 0) and (which = stAskName) then
-         StartPick                      { RETURN alone: show the list }
+      if (length(inLine) = 0) and (which = stAskName) then begin
+         listVol := curVol;             { RETURN alone: working volume }
+         StartPick
+      end
+      else if which = stAskVol then
+         PickVol                        { 1.6; RETURN alone = cancelled }
+      else if (which = stAskName) and (length(inLine) >= 3)
+         and (length(inLine) <= 32)
+         and (inLine[1] = '-') and (inLine[length(inLine)] = '-') then begin
+         listVol := inLine;             { 1.4: -vol- alone browses it }
+         StartPick
+      end
       else if which = stBkNote then
          FinishBkAdd(inLine)            { empty note is fine }
       else if which = stYSave then
@@ -2689,7 +2947,7 @@ begin
          if (k < 1) or (k > pickCnt) then
             LmxWrLn('that is not one of the numbers listed.')
          else begin
-            chosen := pickName[k];
+            chosen := concat(listVol, pickName[k]);  { 1.4: full path }
             LmxWr('sending ');
             LmxWrLn(chosen);
             if ySend then DoSendYOp(chosen)
@@ -2745,6 +3003,9 @@ begin
       end
       else
          LmxWrLn('No fixed-width font found - columns may drift.');
+      LmxWr('Working volume ');
+      LmxWr(curVol);
+      LmxWrLn(' (XModem > Use Volume changes it).');
       LmxWrLn('Ready.')
    end;
    doUpdateEvent(false, myWindow);
@@ -2802,7 +3063,7 @@ begin
                   inLine := '';
                   LmxWrLn('');
                   LmxWrLn('YMODEM receive: the sender supplies the name.');
-                  LmxWr('Save as (RETURN = name from the sender): ')
+                  LmxWr('Save as (RETURN = sender name, or -vol-name): ')
                end;
             miSend :
                begin
@@ -2811,7 +3072,7 @@ begin
                   inLine := '';
                   LmxWrLn('');
                   LmxWrLn('Send: a file on this Lisa goes to the PC.');
-                  LmxWr('File to send (RETURN to browse): ')
+                  LmxWr('File to send (RETURN or -vol- to browse): ')
                end;
             miSendY :
                begin
@@ -2821,7 +3082,7 @@ begin
                   LmxWrLn('');
                   LmxWrLn('Send via YMODEM: name and exact size go');
                   LmxWrLn('with the file.');
-                  LmxWr('File to send (RETURN to browse): ')
+                  LmxWr('File to send (RETURN or -vol- to browse): ')
                end;
             miList :
                DoListOp;
@@ -2831,6 +3092,8 @@ begin
                StartDial;
             miHangUp :
                HangUp;
+            miUseVol :
+               StartUseVol;
             miDelete :
                StartDelete;
             miClear :
@@ -3007,6 +3270,7 @@ var err      : integer;
     excName  : t_ex_name;
     myPrefix : TParamAlert;
     cutAt    : integer;
+    tmp1     : string[1];
 begin
    initing := true;
 
@@ -3048,6 +3312,18 @@ begin
       halt
    end;
    myPrefix := copy(pcInfo.progpathname, 1, cutAt);
+   { 1.2: the device prefix alone (before the tool's open brace) is    }
+   { where received files go.  chr(123) is the brace, SanName-style.   }
+   tmp1 := ' ';
+   tmp1[1] := chr(123);
+   cutAt := pos(tmp1, pcInfo.progpathname);
+   if cutAt > 1 then
+      myVol := copy(pcInfo.progpathname, 1, cutAt - 1)
+   else
+      myVol := '-#12-';                { defensive fallback: boot }
+   listVol := myVol;                   { 1.4 }
+   curVol := myVol;                    { 1.6: working volume starts here }
+   volCnt := 0;
 
    InitMP(theHeap, myPrefix, @AlertFailed, alertVerNum,
           @myMenus[mFile], allAlerts, err);

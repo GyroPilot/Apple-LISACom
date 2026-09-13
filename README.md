@@ -1,13 +1,15 @@
-# LISACom 1.1
+# LISACom 1.7
 
 A serial communications tool for the Apple Lisa Office System. LISACom is a
 native LOS desktop tool: it opens as a window on the Office System desktop,
 drives Serial B, dials BBSes through a WiFi modem, and moves files in both
 directions -- XMODEM, YMODEM with CRC-16, YMODEM batch receive, and YMODEM
-send with exact file sizes. It renders live BBS sessions, including CP437
+send with exact file sizes. It knows which disk it is working on, hangs up
+like a modem expects, and renders live BBS sessions, including CP437
 box art approximated in ASCII, on a 1983 machine's own screen. Written in
 Lisa Pascal with the Workshop 3.0 toolchain; runs under Lisa Office System
 3.1 on real hardware (developed and verified on a Lisa 2/10 and a LisaFPGA).
+See CHANGELOG.md for what changed since 1.1.
 
 ## Thanks
 
@@ -66,8 +68,33 @@ absorbed file set with it, including the invisible phrase file.
 ## Using LISACom
 
 Open the LISACom icon on the desktop. The window shows an 80x24 text pane
-(font 8, fixed width). The welcome banner reports the version and current
-line settings. Any key stops a transfer in progress.
+(font 8, fixed width). The welcome banner reports the version, the line
+settings and the *working volume* (see below). Any key stops a transfer in
+progress.
+
+### The working volume
+
+LISACom keeps one *working volume*: the disk that receives land on and that
+List Files, the Send browse list and Delete a File look at. It starts as the
+volume LISACom is running from, so a copy on the boot disk works on the boot
+disk and a copy on an external disk works there.
+
+XModem -> Use Volume ... lists the mounted volumes it can find and their
+free blocks:
+
+    Mounted volumes:
+    1  -#12-  1984 free blocks  (this tool's volume)
+    2  -#2#1-  13062 free blocks
+    3  -LOWER-  728 free blocks
+    4  -UPPER-  1984 free blocks  (same free count as 1 - probably the same disk)
+    Use which number (RETURN cancels):
+
+Pick a number and everything follows it until you pick again. Entry 1 is
+always the tool's own volume. -LOWER- is a floppy in the drive. On a Lisa
+2/10 the internal disk answers to both -#12- and -UPPER-, hence the note.
+Desktop names ("ProFile", "Disk") are not shown; the free-block count is
+the clue. Bookmarks do not follow the working volume: they stay with the
+tool.
 
 ### The Baud menu
 
@@ -100,10 +127,11 @@ machine keep up with the wire without dropping data.
 XModem -> Dial lists your bookmarks by number; pick one and LISACom opens
 the line, sends the INIT string (if any), waits for the modem to answer
 (OK or ERROR both count), sends the dial command, and drops you in the
-terminal connected.
+terminal connected. If a line is already open, LISACom hangs up first
+(see Hang Up) so the dial string cannot land in the old session.
 
-Bookmarks live in a file named BBSLIST.TEXT on the boot volume, one entry
-per line:
+Bookmarks live in a file named BBSLIST.TEXT on the same volume as the
+LISACom tool, one entry per line:
 
     BAUD 9600
     NAME 8-Bit Boyz|ATDT bbs.8bitboyz.com:23|fun board
@@ -111,7 +139,22 @@ per line:
 
 BAUD sets the default speed, INIT (optional) is sent before each dial,
 and each NAME line is name | dial command | optional note. The Bookmarks
-menu can add, remove, and list entries from the desktop.
+menu can add, remove, and list entries from the desktop; the file is read
+once when LISACom opens. With no BBSLIST.TEXT at all, one built-in entry is
+offered: LISA BBS (The Apple Lisa BBS, theapplelisabbs.duckdns.org:1983).
+A starter BBSLIST.TEXT with eleven boards ships with this release; put it
+beside the tool.
+
+Note that duplicating LISACom onto another disk copies the tool's own
+files only -- BBSLIST.TEXT is an ordinary file and stays where it was.
+
+### Hang Up
+
+XModem -> Hang Up disconnects the way a modem expects: a second of
+silence, +++, a second of silence, ATH, then the modem's reply (OK, then
+NO CARRIER with the call time) and the port closes. About three seconds.
+A WiFi modem such as the WiRSa keeps its connection to the board until it
+sees this; closing the Lisa's port alone does not hang up.
 
 ### BBS session tips
 
@@ -125,13 +168,19 @@ Protocol set to Ymodem so batch downloads skip the prompt.
 ### Receiving files
 
 **Receive a File ... (XMODEM)** -- classic XMODEM checksum receive.
-Prompts for the Lisa filename to create.
+Prompts for the Lisa filename to create; a bare name lands on the working
+volume.
 
 **Receive via YMODEM ...** -- YMODEM with CRC-16, 128-byte and 1K blocks.
 The sender supplies the filename and exact size; press RETURN at the
 Save-as prompt to accept the sender's name, or type a name to override it
-(the typed name applies to the first file only). Start the send on the
-other end -- plain YMODEM, not YMODEM-G -- and LISACom syncs.
+(the typed name applies to the first file only). A bare name lands on
+the working volume; a full -vol-name path is used as typed; a path typed
+without its leading hyphen (#2#1-NAME.PIX) is corrected. The pane shows
+where the file went: "receiving into -#2#1-11.PIX". Start the send on the
+other end -- plain YMODEM, not YMODEM-G -- and LISACom syncs. When the
+receive ends during a BBS session the pane reminds you that the line is
+still open and XModem -> Terminal resumes it.
 
 YMODEM receive is a **batch** receive: if the sender queues several
 files, every file is received, each closed at its own end-of-file, and
@@ -150,32 +199,40 @@ the destination, so a dead transfer cannot damage the only copy.
 ### Sending files
 
 **Send a File ... (XMODEM)** -- XMODEM checksum send. Prompts for a
-filename, or RETURN browses the disk catalog with a paged picker sized
-to the window (a number sends that file, Q stops).
+filename, or RETURN browses the working volume with a paged picker sized
+to the window (a number sends that file, Q stops). A bare name is looked
+up on the working volume; a full -vol-name path sends from anywhere; a
+bare -vol- (for example -#2#1-) browses that volume for this one send.
 
 **Send via YMODEM ...** -- same picker, but the file goes with its name
 and its exact byte count in the YMODEM header, so the receiver truncates
-away the transfer padding and lands the file at its true size. / in
-Lisa filenames is sent as _ for the PC's benefit. On the PC:
+away the transfer padding and lands the file at its true size. The name
+in the header is the bare file name, never the -vol- path, and / in Lisa
+filenames is sent as _ for the PC's benefit. On the PC:
 File -> Transfer -> YMODEM -> Receive in Tera Term (set the transfer
 folder first under Additional settings so you know where files land).
 
 ### List and Delete
 
-List Files shows the boot volume catalog with free space; Delete a File
-removes one after confirmation. Clear Screen empties the pane.
+List Files shows the working volume's catalog under a "Volume -#2#1-:
+N free blocks" line; Delete a File removes one after confirmation (files
+with braces in their names -- tool and desktop files -- are refused).
+Both list up to 100 entries. Clear Screen empties the pane.
 
 ## Building from source
 
-Three source files build the tool:
+Four files build the tool:
 
     LMX/MAIN.TEXT       the program
     LMX/GLOBALS.TEXT    shared state, menu constants, the text pane unit
     LMX/ALERTS.TEXT     alert text and menu definitions (Alert tool input)
+    LMX/MAKE.TEXT       the Workshop exec that compiles, links and installs
 
 Menus are matched by position, so GLOBALS and ALERTS must always change
 together; a build that mixes versions will either fail to compile or
-dispatch menu items wrongly. When in doubt, send all three.
+dispatch menu items wrongly -- the classic symptom is Clear Screen
+listing files to delete. Send all three, every build; a source that
+happens to be lying on the Lisa is not guaranteed to be current.
 
 Two file-format rules matter when sources travel by YMODEM:
 
@@ -188,15 +245,32 @@ Two file-format rules matter when sources travel by YMODEM:
 
 The build itself, on the Lisa:
 
-1. Receive the formatted source(s) with LISACom, then File-Mgr Copy each
-   to its LMX/ slot
-2. From the Workshop main menu: R then <LMX/MAKE (the leading < is
+1. Save & Put Away any running LISACom. (A Set-Aside tool is restored
+   after the rebuild as the *old* program, still showing the old version.)
+2. Receive the formatted sources with LISACom straight onto their LMX/
+   names (type LMX/MAIN.TEXT at the Save-as prompt), or receive to scratch
+   names and File-Mgr Copy them over. Check sizes and timestamps with
+   L LMX/= before compiling.
+3. Empty the Wastebasket. Never drag the old LISACom there: MAKE replaces
+   the program in place, and the icon files exist only as part of the
+   installed tool.
+4. From the Workshop main menu: R then <LMX/MAKE (the leading < is
    required). The exec compiles all three, links, stages the files, runs
-   the Alert tool, and re-registers the tool with InstallTool
-3. Boot the Office System
+   the Alert tool, and re-registers the tool with InstallTool.
+5. L LMX/= again: LMX.OBJ, the linked program, must carry a new
+   timestamp. The exec rolls past compile *and* link errors and installs
+   whatever LMX.OBJ is there, so an old timestamp means the old program
+   was just reinstalled. The About box is the final check.
+6. Boot the Office System and launch the tool fresh.
 
 MAKE only rewrites {T419306}Obj and {T419306}PHRASE; the icon files
 survive every rebuild.
+
+The program's global data sits a few hundred bytes under the linker's
+32K limit ("*** Error - More than 32K of globals ***"). The 16 KB alert
+heap, the 64-line scrollback, the 100-entry browse list and the bookmark
+arrays are the big items; any new global has to be paid for with a cut,
+and the linker's "Common data" figure is the number to watch.
 
 One hard-won limit: the serial driver's typeahead buffer is 1024 bytes
 and that is a real ceiling on a Lisa 2/10 -- configuring it larger kills
@@ -223,11 +297,16 @@ corrupted copies whenever the Filer serialized the tool to a floppy.
 
 ## Distributing on floppy
 
-The image in this repository, `LISAComV1_1_AtkinsonPoint_v1_1_Image.dc42`,
-is the combined distribution floppy: LISACom 1.1 together with
-Atkinsonpoint 1.1 (LISA Slide Show) and its nine-picture starter show.
-The LISACom build on it is unchanged from the August 25 release; the
-slideshow is the 1.1 update.
+`LISACOM_1_7.dc42` in this repository is the 1.7 distribution floppy:
+LISACom 1.7 and the starter BBSLIST.TEXT, written on a Lisa 2/10 (MD5
+918b46ae67befd0cea9f0a93c8fb6d5d). `LISACOM_1_7_ATKINSONPOINT_1_1.dc42`
+is the combined floppy: LISACom 1.7, Atkinsonpoint 1.1 (LISA Slide Show)
+its nine-picture starter show and the starter BBSLIST.TEXT (MD5 5e690df510db43a54ca55a09ec603a27); it is also
+the image in the AtkinsonPoint repository. (The earlier
+`LISAComV1_1_AtkinsonPoint_v1_1_Image.dc42` combined LISACom 1.1 with
+Atkinsonpoint 1.1 and remains available.) After duplicating the tool to
+your disk, copy BBSLIST.TEXT beside it in the Workshop File Manager, or
+simply add bookmarks from the desktop -- the file is created on first Add.
 
 With correct icons, the tool duplicates to a floppy normally (Duplicate
 is the copy; dragging is a move), runs from the floppy, and duplicates
@@ -258,6 +337,18 @@ disk image before passing it on.
   Building from source.
 - **A tool copied to floppy will not run and the drive stalls** -- check
   the icon file first. See Icons.
+- **Clear Screen shows a list of files to delete** (or any menu item does
+  the wrong thing) -- ALERTS.TEXT and GLOBALS.TEXT on the Lisa are from
+  different versions. Rebuild with all three sources from one release.
+- **About still shows the old version after a rebuild** -- either the
+  tool was Set Aside rather than Put Away before the build (launch it
+  fresh), or the link failed and MAKE reinstalled the old LMX.OBJ (check
+  its timestamp; see Building from source).
+- **Dialing a bookmark types ATDT into the board you are already on** --
+  you are running a version before 1.7, which could not hang up a WiFi
+  modem. Log off the board first, or update.
+- **A received file is not in List Files** -- it went to the working
+  volume; check the "receiving into" line and Use Volume.
 
 ## History
 
@@ -270,6 +361,13 @@ added YMODEM batch receive, YMODEM send, CP437 art, and a terminal
 rearchitected so a 2 KB menu burst can never outrun the machine again.
 Everything in this README was verified on a Lisa 2/10 and a LisaFPGA in
 August 2026, including live sessions against Vertrauen and a verified
-byte-exact BBS -> Lisa -> PC file round trip.
+byte-exact BBS -> Lisa -> PC file round trip. 1.2 through 1.7 (September
+2026) came out of building the LOS Installer and The Apple Lisa BBS: files
+that landed on the wrong disk, a hang-up that only closed the Lisa's port,
+and no way to see or choose a disk became the working-volume model, a real
+modem hang-up, and bookmarks that live beside the tool. Each of those
+releases was tested on the 2/10 against the live board before the next
+was started.
 
-Bugs and ideas: post to LisaList2.
+Bugs and ideas: post to LisaList2, or call The Apple Lisa BBS
+(telnet theapplelisabbs.duckdns.org 1983).

@@ -1,6 +1,15 @@
 unit LmxGlobals;
 
-{ LMX-GLOBALS.TEXT -- LISACom (was LISA XModem Util)  ***  1.1  ***      }
+{ LMX-GLOBALS.TEXT -- LISACom (was LISA XModem Util)  ***  1.7  ***      }
+{ 1.7 (13-Sep-2026): volFree (free blocks per listed volume, 36 bytes). }
+{ 1.6b: listVol/curVol/volList shrunk to E_Name (32K globals limit).    }
+{ 1.6 (13-Sep-2026): working volume (curVol) chosen with XModem > Use   }
+{ Volume; miUseVol = 12 shifts miDelete/miClear to 13/14 -- LMX-ALERTS  }
+{ MUST be the 1.6 file or Clear Screen runs Delete.                     }
+{ 1.4 (13-Sep-2026): listVol added -- the volume List/browse/Delete    }
+{ show (myVol unless the user browses another with -vol-).             }
+{ 1.2 (13-Sep-2026): myVol added -- the volume this tool lives on, so    }
+{ received files land beside LISACom instead of on the boot prefix.       }
 { lmxVersion below is the one true version string; the About box shows   }
 { it.  This banner exists so the PC-side file is identifiable at a       }
 { glance.  Shared state, the Filer handshake, and the text pane.         }
@@ -42,8 +51,9 @@ const
       miDial    = 9;          {   Dial ... (bookmarks) }
       miHangUp  = 10;         {   Hang Up (close the line) }
       { item 11 is a '-' separator }
-      miDelete  = 12;         {   Delete a File ... }
-      miClear   = 13;         {   Clear Screen }
+      miUseVol  = 12;         {   Use Volume ... (1.6) }
+      miDelete  = 13;         {   Delete a File ... }
+      miClear   = 14;         {   Clear Screen }
 
    mBaud = 3;                 { "Baud" }
       miB1200  = 1;
@@ -72,7 +82,7 @@ const
 
    maxHeap = 8000;
 
-   lmxVersion = '1.1';         { shown in the title bar and the welcome }
+   lmxVersion = '1.7';         { shown in the title bar and the welcome }
 
    { The text pane. }
    paneLines = 64;            { lines the buffer remembers }
@@ -105,6 +115,17 @@ var
    paneUp    : boolean;       { true once LmxPane has run for this window }
    cancelled : boolean;       { set when the user aborts an operation }
    lineOpen  : boolean;       { the terminal left the port open; keep it }
+   { 1.6b: these three are E_Name (33 bytes), not Pathname (256): the   }
+   { linker refused 1.6 with 'More than 32K of globals'.  A device      }
+   { prefix is at most a dozen characters.                              }
+   listVol   : E_Name;        { 1.4: volume being listed / browsed / deleted from }
+   curVol    : E_Name;        { 1.6: working volume -- receives, List, browse, Delete }
+   volList   : array [1..9] of E_Name;  { 1.6: mounted volumes found (maxVols) }
+   volCnt    : integer;
+   volFree   : array [1..9] of longint;  { 1.7: free blocks per entry, to spot }
+                                        { one disk answering to two names   }
+   myVol     : Pathname;      { 1.2: device prefix this tool runs from, }
+                              { e.g. -#2#1- ; received files go here    }
    termEcho  : boolean;       { terminal local echo }
    termCRLF  : boolean;       { RETURN sends CR+LF (true) or CR only }
    termBS    : boolean;       { Backspace sends BS (true) or DEL }
